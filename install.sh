@@ -4,6 +4,7 @@ set -euo pipefail
 
 kind create cluster --config kind-hub.yml
 kind create cluster --config kind-01.yml
+kind create cluster --config kind-02.yml
 
 INGRESS_DOMAIN="nip.io"
 
@@ -25,9 +26,11 @@ echo
 # alternative mode
 kubectl --context kind-hub apply -f ingress-nginx/deploy-ingress-nginx.yml
 kubectl --context kind-01 apply -f ingress-nginx/deploy-ingress-nginx.yml
+kubectl --context kind-02 apply -f ingress-nginx/deploy-ingress-nginx.yml
 sleep 15
 kubectl --context kind-hub wait --namespace ingress-nginx  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 kubectl --context kind-01 wait --namespace ingress-nginx  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+kubectl --context kind-02 wait --namespace ingress-nginx  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 
 ## install Gitea
 echo
@@ -113,6 +116,25 @@ server:
     enabled: true
     hostname: ${ARGOCD01_HOST}
 EOF
+echo
+ARGOCD02_HOST="argocd02.${INGRESS_DOMAIN}"
+cat <<EOF | helm --kube-context kind-02 upgrade --install argocd argo/argo-cd --wait --create-namespace --namespace=argocd --values=-
+configs:
+  cm:
+    admin.enabled: false
+    timeout.reconciliation: 10s
+  params:
+    server.insecure: true
+    server.disable.auth: true
+  repositories:
+    local:
+      name: local
+      url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
+server:
+  ingress:
+    enabled: true
+    hostname: ${ARGOCD02_HOST}
+EOF
 
 # Create an ArgoCD Application to monitor my local repository under mnt
 echo
@@ -179,6 +201,38 @@ spec:
         factor: 2 # a factor to multiply the base duration after each failed retry
         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
 EOF
+echo
+cat <<EOF | kubectl --context kind-02 apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test-app
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: default
+    server: 'https://kubernetes.default.svc'
+  project: default
+  source:
+    path: apps
+    repoURL: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
+    targetRevision: HEAD
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
+      backoff:
+        duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
+        factor: 2 # a factor to multiply the base duration after each failed retry
+        maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
+EOF
 
 echo
 echo "Gitea address: http://${GITEA_HOST}"
@@ -186,3 +240,4 @@ echo "Gitea login: U: ${GITEA_USERNAME} - P: ${GITEA_PASSWORD}"
 echo
 echo "ArgoCD HUB address: http://${ARGOCD_HOST}"
 echo "ArgoCD 01 address: http://${ARGOCD01_HOST}:8080"
+echo "ArgoCD 02 address: http://${ARGOCD02_HOST}:9080"
