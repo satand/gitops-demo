@@ -320,7 +320,7 @@ subjects:
   namespace: ingress-nginx
 ---
 apiVersion: v1
-data: null
+data: {}
 kind: ConfigMap
 metadata:
   labels:
