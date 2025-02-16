@@ -63,10 +63,10 @@ GITEA_EXTERNAL_AUTHORITY="${GITEA_EXTERNAL_IP}:${GITEA_EXTERNAL_PORT}"
 
 ## Create the git repo
 echo
-sleep 15
+sleep 10
 curl -v -s -XPOST -H "Content-Type: application/json" -k -u "${GITEA_USERNAME}:${GITEA_PASSWORD}" \
   --url "http://${GITEA_HOST}/api/v1/user/repos" -d '{"name": "test-repo", "private": false, "default_branch": "main"}'
-# Push code to git repository
+# Push the code to git repository
 cd test-repo
 rm -rf .git
 git init
@@ -80,6 +80,10 @@ cd ..
 ## Setup ArgoCDs
 echo
 ARGOCD_HOST="argocd.${INGRESS_DOMAIN}"
+ARGOCD01_HOST="argocd01.${INGRESS_DOMAIN}"
+ARGOCD02_HOST="argocd02.${INGRESS_DOMAIN}"
+
+# Install argocd in the cluster hub
 cat <<EOF | helm --kube-context kind-hub upgrade --install argocd argo/argo-cd --wait --create-namespace --namespace=argocd --values=-
 configs:
   cm:
@@ -97,53 +101,11 @@ server:
     enabled: true
     hostname: ${ARGOCD_HOST}
 EOF
-echo
-ARGOCD01_HOST="argocd01.${INGRESS_DOMAIN}"
-cat <<EOF | helm --kube-context kind-01 upgrade --install argocd argo/argo-cd --wait --create-namespace --namespace=argocd --values=-
-configs:
-  cm:
-    admin.enabled: true
-    timeout.reconciliation: 10s
-  params:
-    server.insecure: true
-    server.disable.auth: false
-  repositories:
-    local:
-      name: local
-      url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
-server:
-  ingress:
-    enabled: true
-    hostname: ${ARGOCD01_HOST}
-EOF
-echo
-ARGOCD02_HOST="argocd02.${INGRESS_DOMAIN}"
-cat <<EOF | helm --kube-context kind-02 upgrade --install argocd argo/argo-cd --wait --create-namespace --namespace=argocd --values=-
-configs:
-  cm:
-    admin.enabled: true
-    timeout.reconciliation: 10s
-  params:
-    server.insecure: true
-    server.disable.auth: false
-  repositories:
-    local:
-      name: local
-      url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
-server:
-  ingress:
-    enabled: true
-    hostname: ${ARGOCD02_HOST}
-EOF
-ARGOCD_PASSWORD=$(kubectl --context kind-hub -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-ARGOCD01_PASSWORD=$(kubectl --context kind-01 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-ARGOCD02_PASSWORD=$(kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
-
-# Create peripheral argocd cluster in cluster hub argocd instance
+# Create the cluster hub argocd cluster reference to the peripheral clusters
 # 1) Setup kubeconfig in hub-control-plane (container of cluster hub control-plane node)
 # 2) Install argocd cli
-# 3) Use argocd cli to create c01 and c02 argocd clusters in the hub argocd
+# 3) Use argocd cli to create c01 and c02 argocd clusters in the hub argocd instance
 echo
 docker cp ~/.kube/config hub-control-plane:/root/.kube/config
 
@@ -170,6 +132,109 @@ argocd cluster add kind-01 --yes --name c01
 argocd cluster add kind-02 --yes --name c02
 EOF
 
+# Install peripheral argocd instances using the clster hub argocd instance
+echo
+cat <<EOF | kubectl --context kind-hub apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-c01
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    name: c01
+    namespace: argocd
+  source:
+    path: ''
+    repoURL: https://argoproj.github.io/argo-helm
+    targetRevision: 7.8.2
+    chart: argo-cd
+    helm:
+      values: |
+        configs:
+          cm:
+            admin.enabled: true
+            timeout.reconciliation: 10s
+          params:
+            server.insecure: true
+            server.disable.auth: false
+          repositories:
+            local:
+              name: local
+              url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
+        server:
+          ingress:
+            enabled: true
+            hostname: ${ARGOCD01_HOST}
+  sources: []
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
+      backoff:
+        duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
+        factor: 2 # a factor to multiply the base duration after each failed retry
+        maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
+EOF
+echo
+cat <<EOF | kubectl --context kind-hub apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-c02
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    name: c02
+    namespace: argocd
+  source:
+    path: ''
+    repoURL: https://argoproj.github.io/argo-helm
+    targetRevision: 7.8.2
+    chart: argo-cd
+    helm:
+      values: |
+        configs:
+          cm:
+            admin.enabled: true
+            timeout.reconciliation: 10s
+          params:
+            server.insecure: true
+            server.disable.auth: false
+          repositories:
+            local:
+              name: local
+              url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
+        server:
+          ingress:
+            enabled: true
+            hostname: ${ARGOCD02_HOST}
+  sources: []
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
+      backoff:
+        duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
+        factor: 2 # a factor to multiply the base duration after each failed retry
+        maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
+EOF
 
 # Create ArgoCD Applications
 echo
@@ -204,134 +269,10 @@ spec:
         factor: 2 # a factor to multiply the base duration after each failed retry
         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
 EOF
-echo
-cat <<EOF | kubectl --context kind-hub apply -f -
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: test-app-c01
-  namespace: argocd
-  finalizers:
-  - resources-finalizer.argocd.argoproj.io
-spec:
-  destination:
-    namespace: default
-    name: c01
-  project: default
-  source:
-    path: apps
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git
-    targetRevision: HEAD
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-      allowEmpty: true
-    syncOptions:
-      - CreateNamespace=true
-    retry:
-      limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
-      backoff:
-        duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
-        factor: 2 # a factor to multiply the base duration after each failed retry
-        maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
-EOF
-echo
-cat <<EOF | kubectl --context kind-hub apply -f -
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: test-app-c02
-  namespace: argocd
-  finalizers:
-  - resources-finalizer.argocd.argoproj.io
-spec:
-  destination:
-    namespace: default
-    name: c02
-  project: default
-  source:
-    path: apps
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git
-    targetRevision: HEAD
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-      allowEmpty: true
-    syncOptions:
-      - CreateNamespace=true
-    retry:
-      limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
-      backoff:
-        duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
-        factor: 2 # a factor to multiply the base duration after each failed retry
-        maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
-EOF
-# echo
-# cat <<EOF | kubectl --context kind-01 apply -f -
-# apiVersion: argoproj.io/v1alpha1
-# kind: Application
-# metadata:
-#   name: test-app
-#   namespace: argocd
-#   finalizers:
-#   - resources-finalizer.argocd.argoproj.io
-# spec:
-#   destination:
-#     namespace: default
-#     server: 'https://kubernetes.default.svc'
-#   project: default
-#   source:
-#     path: apps
-#     repoURL: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
-#     targetRevision: HEAD
-#   syncPolicy:
-#     automated:
-#       prune: true
-#       selfHeal: true
-#       allowEmpty: true
-#     syncOptions:
-#       - CreateNamespace=true
-#     retry:
-#       limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
-#       backoff:
-#         duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
-#         factor: 2 # a factor to multiply the base duration after each failed retry
-#         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
-# EOF
-# echo
-# cat <<EOF | kubectl --context kind-02 apply -f -
-# apiVersion: argoproj.io/v1alpha1
-# kind: Application
-# metadata:
-#   name: test-app
-#   namespace: argocd
-#   finalizers:
-#   - resources-finalizer.argocd.argoproj.io
-# spec:
-#   destination:
-#     namespace: default
-#     server: 'https://kubernetes.default.svc'
-#   project: default
-#   source:
-#     path: apps
-#     repoURL: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
-#     targetRevision: HEAD
-#   syncPolicy:
-#     automated:
-#       prune: true
-#       selfHeal: true
-#       allowEmpty: true
-#     syncOptions:
-#       - CreateNamespace=true
-#     retry:
-#       limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
-#       backoff:
-#         duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
-#         factor: 2 # a factor to multiply the base duration after each failed retry
-#         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
-# EOF
+
+ARGOCD_PASSWORD=$(kubectl --context kind-hub -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+ARGOCD01_PASSWORD=$(kubectl --context kind-01 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+ARGOCD02_PASSWORD=$(kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
 echo
 echo "Gitea" 
