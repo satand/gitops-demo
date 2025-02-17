@@ -55,11 +55,17 @@ EOF
 
 # Create a Loadbalancer service for gitea to enable the communication from other clusters
 echo
-kubectl --context kind-hub -n gitea apply -f gitea/gitea-loadbalancer-svc.yaml
+kubectl --context kind-hub -n gitea apply -f gitea/cluster-hub/gitea-loadbalancer-svc.yaml
 kubectl --context kind-hub -n gitea wait svc/gitea --for=jsonpath='{.status.loadBalancer.ingress}'
 GITEA_EXTERNAL_IP=$(kubectl --context kind-hub -n gitea get svc/gitea -o=jsonpath='{.status.loadBalancer.ingress[0].ip}')
 GITEA_EXTERNAL_PORT=$(kubectl --context kind-hub -n gitea get svc/gitea -o=jsonpath='{.status.loadBalancer.ingress[0].ports[0].port}')
-GITEA_EXTERNAL_AUTHORITY="${GITEA_EXTERNAL_IP}:${GITEA_EXTERNAL_PORT}"
+
+
+# Create a service for gitea in the other clusters (connected to the external gitea ip/port of cluster hub)
+echo
+GITEA_SERVICE_YAML=$(sed "s/<GITEA_EXTERNAL_IP>/${GITEA_EXTERNAL_IP}/g; s/<GITEA_EXTERNAL_PORT>/${GITEA_EXTERNAL_PORT}/g" gitea/cluster-worker/gitea-svc.yaml)
+echo "$GITEA_SERVICE_YAML" | kubectl --context kind-01 apply -f -
+echo "$GITEA_SERVICE_YAML" | kubectl --context kind-02 apply -f -
 
 ## Create the git repo
 echo
@@ -163,7 +169,7 @@ spec:
           repositories:
             local:
               name: local
-              url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
+              url: "http://gitea.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git"
         server:
           ingress:
             enabled: true
@@ -214,7 +220,7 @@ spec:
           repositories:
             local:
               name: local
-              url: "http://${GITEA_EXTERNAL_AUTHORITY}/gitea_admin/test-repo.git"
+              url: "http://gitea.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git"
         server:
           ingress:
             enabled: true
@@ -253,7 +259,7 @@ spec:
   project: default
   source:
     path: apps
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git
     targetRevision: HEAD
   syncPolicy:
     automated:
@@ -270,6 +276,7 @@ spec:
         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
 EOF
 
+sleep 5
 ARGOCD_PASSWORD=$(kubectl --context kind-hub -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 ARGOCD01_PASSWORD=$(kubectl --context kind-01 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 ARGOCD02_PASSWORD=$(kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
