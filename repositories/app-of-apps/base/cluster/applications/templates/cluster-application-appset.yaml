@@ -28,6 +28,7 @@ spec:
           valueFiles:
           - values.yaml
           - values-{{ .Values.cluster_env }}.yaml
+          - $values/clusters/{{ .Values.cluster_name }}/{{ .Values.cluster_env }}/env-conf.yaml
           - $values/clusters/{{ .Values.cluster_name }}/{{ .Values.cluster_env }}/applications/{{`{{application.name}}`}}.yaml
           ignoreMissingValueFiles: true
       - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git

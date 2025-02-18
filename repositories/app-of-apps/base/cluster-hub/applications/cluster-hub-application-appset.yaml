@@ -8,14 +8,14 @@ spec:
     - git:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
         revision: main # Use a specific tag of app-of-apps repository
-        files:
-          - path: "clusters/**/cluster-conf.yaml"
+        directories:
+          - path: "clusters/*/*"
   template:
     metadata:
-      name: "config-{{cluster.name}}-{{cluster.environment}}-application"
+      name: "config-{{path[1]}}-{{path[2]}}-application" #"config-{{index .path.segments 1}}-{{index .path.segments 2}}-application"
       labels:
-        env: "{{cluster.environment}}" 
-        cluster: "{{cluster.name}}"
+        env: "{{path[2]}}" 
+        cluster: "{{path[1]}}"
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
@@ -26,10 +26,10 @@ spec:
         path: base/cluster/applications
         helm:
           values: |
-            cluster_env: "{{cluster.environment}}"
-            cluster_name: "{{cluster.name}}"
+            cluster_env: "{{path[2]}}" 
+            cluster_name: "{{path[1]}}"
       destination:
-        name: "{{cluster.name}}"
+        name: "{{path[1]}}"
         namespace: argocd
       syncPolicy:
         automated:
