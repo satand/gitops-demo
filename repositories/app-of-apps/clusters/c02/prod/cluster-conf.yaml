@@ -1,0 +1,3 @@
+cluster:
+  name: c02
+  environment: prod

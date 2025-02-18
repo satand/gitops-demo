@@ -1,5 +1,62 @@
 #!/bin/bash
 
+log() {
+    local COLOR="$1"
+    local MESSAGE="$2"
+    local RESET="\e[0m\n"
+
+    case "$COLOR" in
+        red)    COLOR="\e[31m" ;;
+        green)  COLOR="\e[32m" ;;
+        yellow) COLOR="\e[33m" ;;
+        blue)   COLOR="\e[34m" ;;
+        purple) COLOR="\e[35m" ;;
+        cyan)   COLOR="\e[36m" ;;
+        *)      COLOR="\e[0m" ;; # Default (nessun colore)
+    esac
+
+    printf "${COLOR}${MESSAGE}${RESET}"
+}
+
+function createGitRepo() {
+  HOST=$1
+  USERNAME=$2
+  PASSWORD=$3
+  REPO_NAME=$4
+  BASE_PATH=${5:-"repositories"}
+
+  echo "Creating git repo from: ${BASE_PATH}/${REPO_NAME}"
+  curl -v -s -XPOST -H "Content-Type: application/json" -k -u "${USERNAME}:${PASSWORD}" \
+    --url "http://${HOST}/api/v1/user/repos" -d '{"name": "'${REPO_NAME}'", "private": false, "default_branch": "main"}'
+
+  # Push the code to git repository
+  pushd ${BASE_PATH}/${REPO_NAME} > /dev/null
+  rm -rf .git
+  git init
+  git checkout -b main
+  git add .
+  git commit -m "first commit"
+  git remote add origin http://gitea.nip.io/${USERNAME}/${REPO_NAME}.git
+  git push -u origin main
+  rm -rf .git
+  popd > /dev/null
+
+  echo "Created git repo: ${REPO_NAME}"
+}
+
+function deleteGitRepo() {
+  HOST=$1
+  USERNAME=$2
+  PASSWORD=$3
+  REPO_NAME=$4
+
+  echo "Deleting git repo: ${REPO_NAME}"
+  curl -v -s -XDELETE -H "Content-Type: application/json" -k -u "${USERNAME}:${PASSWORD}" \
+    --url "http://${HOST}/api/v1/repos/${USERNAME}/${REPO_NAME}"
+  
+  echo "Deleted git repo: ${REPO_NAME}"
+}
+
 set -euo pipefail
 
 ## Create clusters
@@ -28,7 +85,6 @@ echo
 kubectl --context kind-hub apply -f ingress-nginx/deploy-ingress-nginx.yml
 kubectl --context kind-01 apply -f ingress-nginx/deploy-ingress-nginx.yml
 kubectl --context kind-02 apply -f ingress-nginx/deploy-ingress-nginx.yml
-sleep 15
 kubectl --context kind-hub wait --namespace ingress-nginx  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 kubectl --context kind-01 wait --namespace ingress-nginx  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
 kubectl --context kind-02 wait --namespace ingress-nginx  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
@@ -67,21 +123,11 @@ GITEA_SERVICE_YAML=$(sed "s/<GITEA_EXTERNAL_IP>/${GITEA_EXTERNAL_IP}/g; s/<GITEA
 echo "$GITEA_SERVICE_YAML" | kubectl --context kind-01 apply -f -
 echo "$GITEA_SERVICE_YAML" | kubectl --context kind-02 apply -f -
 
-## Create the git repo
+## Create the git repos
 echo
 sleep 10
-curl -v -s -XPOST -H "Content-Type: application/json" -k -u "${GITEA_USERNAME}:${GITEA_PASSWORD}" \
-  --url "http://${GITEA_HOST}/api/v1/user/repos" -d '{"name": "test-repo", "private": false, "default_branch": "main"}'
-# Push the code to git repository
-cd test-repo
-rm -rf .git
-git init
-git checkout -b main
-git add .
-git commit -m "first commit"
-git remote add origin http://gitea.nip.io/gitea_admin/test-repo.git
-git push -u origin main
-cd ..
+createGitRepo ${GITEA_HOST} ${GITEA_USERNAME} ${GITEA_PASSWORD} "app-of-apps"
+createGitRepo ${GITEA_HOST} ${GITEA_USERNAME} ${GITEA_PASSWORD} "testapp" "repositories/config/applications"
 
 ## Setup ArgoCDs
 echo
@@ -101,7 +147,7 @@ configs:
   repositories:
     local:
       name: local
-      url: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git
+      url: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/testapp.git
 server:
   ingress:
     enabled: true
@@ -169,7 +215,7 @@ spec:
           repositories:
             local:
               name: local
-              url: "http://gitea.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git"
+              url: "http://gitea.gitea.svc.cluster.local:3000/gitea_admin/testapp.git"
         server:
           ingress:
             enabled: true
@@ -220,7 +266,7 @@ spec:
           repositories:
             local:
               name: local
-              url: "http://gitea.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git"
+              url: "http://gitea.gitea.svc.cluster.local:3000/gitea_admin/testapp.git"
         server:
           ingress:
             enabled: true
@@ -242,53 +288,38 @@ spec:
         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
 EOF
 
-# Create ArgoCD Applications
+# Apply App-of-Apps root in  Applications
 echo
-cat <<EOF | kubectl --context kind-hub apply -f -
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: test-app
-  namespace: argocd
-  finalizers:
-  - resources-finalizer.argocd.argoproj.io
-spec:
-  destination:
-    namespace: default
-    server: 'https://kubernetes.default.svc'
-  project: default
-  source:
-    path: apps
-    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/test-repo.git
-    targetRevision: HEAD
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-      allowEmpty: true
-    syncOptions:
-      - CreateNamespace=true
-    retry:
-      limit: -1 # number of failed sync attempt retries; unlimited number of attempts if less than 0
-      backoff:
-        duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
-        factor: 2 # a factor to multiply the base duration after each failed retry
-        maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
-EOF
+kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/applications/cluster-hub-application-appset.yaml
 
-sleep 5
+## Get access info
+echo
+while ! kubectl --context kind-hub -n argocd get secret argocd-initial-admin-secret &> /dev/null; do
+  echo "Waiting creation of secret/argocd-initial-admin-secret in argocd namespace of kind-hub cluster ..."
+  sleep 5
+done
 ARGOCD_PASSWORD=$(kubectl --context kind-hub -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+
+while ! kubectl --context kind-01 -n argocd get secret argocd-initial-admin-secret &> /dev/null; do
+  echo "Waiting creation of secret/argocd-initial-admin-secret in argocd namespace of kind-01 cluster ..."
+  sleep 5
+done
 ARGOCD01_PASSWORD=$(kubectl --context kind-01 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+
+while ! kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secret &> /dev/null; do
+  echo "Waiting creation of secret/argocd-initial-admin-secret in argocd namespace of kind-02 cluster ..."
+  sleep 5
+done
 ARGOCD02_PASSWORD=$(kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
 echo
-echo "Gitea" 
-echo "address: http://${GITEA_HOST} - login: U: ${GITEA_USERNAME} - P: ${GITEA_PASSWORD}"
+log "red" "Gitea" 
+log "blue" "address: http://${GITEA_HOST} - login: U: ${GITEA_USERNAME} - P: ${GITEA_PASSWORD}"
 echo
-echo "ArgoCD HUB"
-echo "address: http://${ARGOCD_HOST} - login: U: admin - P: ${ARGOCD_PASSWORD}"
-echo "ArgoCD 01"
-echo "address: http://${ARGOCD01_HOST}:8080 - login: U: admin - P: ${ARGOCD01_PASSWORD}"
-echo "ArgoCD 02"
-echo "address: http://${ARGOCD02_HOST}:9080 - login: U: admin - P: ${ARGOCD02_PASSWORD}"
+log "red" "ArgoCD HUB"
+log "blue" "address: http://${ARGOCD_HOST} - login: U: admin - P: ${ARGOCD_PASSWORD}"
+log "red" "ArgoCD 01"
+log "blue" "address: http://${ARGOCD01_HOST}:8080 - login: U: admin - P: ${ARGOCD01_PASSWORD}"
+log "red" "ArgoCD 02"
+log "blue" "address: http://${ARGOCD02_HOST}:9080 - login: U: admin - P: ${ARGOCD02_PASSWORD}"
 

@@ -74,21 +74,21 @@ spec:
   - http:
       paths:
       - pathType: Prefix
-        path: /foo
+        path: /{{ .Values.application.namespace }}/foo
         backend:
           service:
             name: foo-service
             port:
               number: 8080
       - pathType: Prefix
-        path: /bar
+        path: /{{ .Values.application.namespace }}/bar
         backend:
           service:
             name: bar-service
             port:
               number: 8080
       - pathType: Prefix
-        path: /random
+        path: /{{ .Values.application.namespace }}/random
         backend:
           service:
             name: http-echo-service

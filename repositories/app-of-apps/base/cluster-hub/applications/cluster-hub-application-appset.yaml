@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: application-appset
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
+        revision: main # Use a specific tag of app-of-apps repository
+        files:
+          - path: "clusters/**/cluster-conf.yaml"
+  template:
+    metadata:
+      name: "config-{{cluster.name}}-{{cluster.environment}}-application"
+      labels:
+        env: "{{cluster.environment}}" 
+        cluster: "{{cluster.name}}"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
+        targetRevision: main # Use a specific tag of app-of-apps repository
+        path: base/cluster/applications
+        helm:
+          values: |
+            cluster_env: "{{cluster.environment}}"
+            cluster_name: "{{cluster.name}}"
+      destination:
+        name: "{{cluster.name}}"
+        namespace: argocd
+      syncPolicy:
+        automated:
+          prune: true
+        syncOptions:
+        - PrunePropagationPolicy=foreground

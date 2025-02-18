@@ -43,3 +43,14 @@ cluster kind-02
 curl "http://localhost:9080/bar" ; echo
 curl -k "https://localhost:9443/foo" ; echo
 ```
+
+## Set /etc/hosts of local host to view the UI portals of Gitea and ArgoCDs
+Edit /etc/hosts file
+```bash
+sudo vi /etc/hosts
+```
+adding this lines
+```bash
+# Demo gitops
+127.0.0.1        gitea.nip.io argocd.nip.io argocd01.nip.io argocd02.nip.io
+```

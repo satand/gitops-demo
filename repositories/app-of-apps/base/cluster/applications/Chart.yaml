@@ -1,0 +1,5 @@
+apiVersion: v2
+name: app-applicationset-helm-chart
+description: A Helm chart for App ApplicationSet
+type: application
+version: 1.0.0
