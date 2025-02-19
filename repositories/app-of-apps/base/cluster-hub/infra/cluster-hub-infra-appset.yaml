@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: application-appset
+  name: infra-appset
   namespace: argocd
 spec:
   generators:
@@ -9,12 +9,11 @@ spec:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
         revision: main # Use a specific tag of app-of-apps repository
         directories:
-          - path: "clusters/*/*"
+          - path: "clusters/*"
   template:
     metadata:
-      name: "config-{{path[1]}}-{{path[2]}}-application"
+      name: "config-{{path[1]}}-infra"
       labels:
-        env: "{{path[2]}}" 
         cluster: "{{path[1]}}"
       finalizers:
         - resources-finalizer.argocd.argoproj.io
@@ -23,13 +22,12 @@ spec:
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
         targetRevision: main # Use a specific tag of app-of-apps repository
-        path: base/cluster/applications
+        path: base/cluster/infra
         helm:
           values: |
-            cluster_env: "{{path[2]}}" 
             cluster_name: "{{path[1]}}"
           valueFiles:
-          - ../../../clusters/{{path[1]}}/{{path[2]}}/env-conf.yaml
+          - ../../../clusters/{{path[1]}}/cluster-conf.yaml
           ignoreMissingValueFiles: true
       destination:
         name: "{{path[1]}}"

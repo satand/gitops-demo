@@ -1,3 +1,4 @@
+# ArgoCD
 argocd:
   autoSync: true
-  prune: true
+  prune: false

@@ -1,7 +1,8 @@
+{{- if eq (include "isEnvDefined" .) "false" -}}
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: "{{ .Values.cluster_name }}-{{ .Values.cluster_env }}-application-appset"
+  name: "{{ .Values.cluster_name }}-infra-appset"
   namespace: argocd
 spec:
   generators:
@@ -9,34 +10,32 @@ spec:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
         revision: main # Use a specific tag of app-of-apps repository
         files:
-          - path: "clusters/{{ .Values.cluster_name }}/{{ .Values.cluster_env }}/applications/*.yaml"
+          - path: "clusters/{{ .Values.cluster_name }}/infra/*.yaml"
   template:
     metadata:
-      name: "config-{{ .Values.cluster_env }}-{{`{{application.name}}`}}-application"
+      name: "config-{{`{{infra.name}}`}}-application"
       labels:
-        application: "{{`{{application.name}}`}}"
-        env: "{{ .Values.cluster_env }}"
+        infra: "{{`{{infra.name}}`}}"
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
       project: default
       sources:
-      - repoURL: "{{`{{application.repoURL}}`}}"
-        targetRevision: "{{`{{application.targetRevision}}`}}"
-        path: "{{`{{application.path}}`}}"
+      - repoURL: "{{`{{infra.repoURL}}`}}"
+        targetRevision: "{{`{{infra.targetRevision}}`}}"
+        path: "{{`{{infra.path}}`}}"
         helm:
           valueFiles:
           - values.yaml
-          - values-{{ .Values.cluster_env }}.yaml
-          - $values/clusters/{{ .Values.cluster_name }}/{{ .Values.cluster_env }}/env-conf.yaml
-          - $values/clusters/{{ .Values.cluster_name }}/{{ .Values.cluster_env }}/applications/{{`{{application.name}}`}}.yaml
+          - $values/clusters/{{ .Values.cluster_name }}/cluster-conf.yaml
+          - $values/clusters/{{ .Values.cluster_name }}/infra/{{`{{infra.name}}`}}.yaml
           ignoreMissingValueFiles: true
       - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitea_admin/app-of-apps.git
         targetRevision: main # Use a specific tag of app-of-apps repository
         ref: values
       destination:
         server: https://kubernetes.default.svc
-        namespace: "{{`{{application.namespace}}`}}"
+        namespace: "{{`{{infra.namespace}}`}}"
       syncPolicy:
         {{- if .Values.argocd }}
         {{- if .Values.argocd.autoSync }}
@@ -47,3 +46,4 @@ spec:
         syncOptions:
         - PrunePropagationPolicy=foreground
         - CreateNamespace=true
+{{- end }}

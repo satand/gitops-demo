@@ -184,7 +184,7 @@ argocd cluster add kind-01 --yes --name c01
 argocd cluster add kind-02 --yes --name c02
 EOF
 
-# Install peripheral argocd instances using the clster hub argocd instance
+# Install peripheral argocd instances using the cluster hub argocd instance
 echo
 cat <<EOF | kubectl --context kind-hub apply -f -
 apiVersion: argoproj.io/v1alpha1
@@ -288,8 +288,10 @@ spec:
         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
 EOF
 
-# Apply App-of-Apps root in  Applications
+# Apply App-of-Apps ApplicationSets
 echo
+kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/infra/cluster-hub-infra-appset.yaml
+kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/infra/cluster-hub-env-infra-appset.yaml
 kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/applications/cluster-hub-application-appset.yaml
 
 ## Get access info

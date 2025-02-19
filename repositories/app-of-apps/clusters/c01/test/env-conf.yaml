@@ -1,0 +1,3 @@
+argocd:
+  autoSync: true
+  prune: true
