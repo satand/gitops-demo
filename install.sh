@@ -128,6 +128,7 @@ echo
 sleep 10
 createGitRepo ${GITEA_HOST} ${GITEA_USERNAME} ${GITEA_PASSWORD} "app-of-apps"
 createGitRepo ${GITEA_HOST} ${GITEA_USERNAME} ${GITEA_PASSWORD} "testapp" "repositories/config/applications"
+createGitRepo ${GITEA_HOST} ${GITEA_USERNAME} ${GITEA_PASSWORD} "kafka" "repositories/config/infra"
 
 ## Setup ArgoCDs
 echo
@@ -288,13 +289,7 @@ spec:
         maxDuration: 10m # the maximum amount of time allowed for the backoff strategy
 EOF
 
-# Apply App-of-Apps ApplicationSets
-echo
-kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/infra/cluster-hub-infra-appset.yaml
-kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/infra/cluster-hub-env-infra-appset.yaml
-kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/applications/cluster-hub-application-appset.yaml
-
-## Get access info
+## Get access info waiting the ArgoCDs are running
 echo
 while ! kubectl --context kind-hub -n argocd get secret argocd-initial-admin-secret &> /dev/null; do
   echo "Waiting creation of secret/argocd-initial-admin-secret in argocd namespace of kind-hub cluster ..."
@@ -314,6 +309,18 @@ while ! kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secr
 done
 ARGOCD02_PASSWORD=$(kubectl --context kind-02 -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
+# Add ArgoCD helm oci secrets to enable ArgoCD using helm oci repositories
+echo
+kubectl --context kind-01 -n argocd apply -f argocd/argocd-heml-oci-secrets.yaml
+kubectl --context kind-02 -n argocd apply -f argocd/argocd-heml-oci-secrets.yaml
+
+# Apply App-of-Apps ApplicationSets
+echo
+kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/infra/cluster-hub-infra-appset.yaml
+kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/infra/cluster-hub-env-infra-appset.yaml
+kubectl --context kind-hub apply -f repositories/app-of-apps/base/cluster-hub/applications/cluster-hub-application-appset.yaml
+
+## Print installation info
 echo
 log "red" "Gitea" 
 log "blue" "address: http://${GITEA_HOST} - login: U: ${GITEA_USERNAME} - P: ${GITEA_PASSWORD}"
@@ -324,4 +331,3 @@ log "red" "ArgoCD 01"
 log "blue" "address: http://${ARGOCD01_HOST}:8080 - login: U: admin - P: ${ARGOCD01_PASSWORD}"
 log "red" "ArgoCD 02"
 log "blue" "address: http://${ARGOCD02_HOST}:9080 - login: U: admin - P: ${ARGOCD02_PASSWORD}"
-

@@ -10,6 +10,8 @@ spec:
         revision: main # Use a specific tag of app-of-apps repository
         directories:
           - path: "clusters/*/*"
+          - path: "clusters/*/infra"
+            exclude: true
   template:
     metadata:
       name: "config-{{path[1]}}-{{path[2]}}-application"

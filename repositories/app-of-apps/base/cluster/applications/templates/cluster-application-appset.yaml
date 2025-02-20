@@ -24,6 +24,7 @@ spec:
       - repoURL: "{{`{{application.repoURL}}`}}"
         targetRevision: "{{`{{application.targetRevision}}`}}"
         path: "{{`{{application.path}}`}}"
+        chart: "{{`{{application.chart}}`}}"
         helm:
           valueFiles:
           - values.yaml

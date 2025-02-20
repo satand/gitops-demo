@@ -1,0 +1,7 @@
+infra:
+  name: strimzi-kafka-operator
+  repoURL: 'quay.io/strimzi-helm'
+  targetRevision: 0.45.0
+  path: ''
+  chart: strimzi-kafka-operator
+  namespace: kafka

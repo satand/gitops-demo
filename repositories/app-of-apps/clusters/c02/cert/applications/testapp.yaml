@@ -3,4 +3,5 @@ application:
   repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitea_admin/testapp.git'
   targetRevision: main # you should use a tag
   path: .
+  chart: ''
   namespace: cert

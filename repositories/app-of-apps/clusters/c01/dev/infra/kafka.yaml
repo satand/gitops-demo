@@ -1,0 +1,10 @@
+infra:
+  name: kafka
+  repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitea_admin/kafka.git'
+  targetRevision: main # you should use a tag
+  path: .
+  chart: ''
+  namespace: kafka
+
+
+prefix: dev
