@@ -122,4 +122,18 @@ now you can open the links showed at the end of the 'install.sh' script executio
 
 Obviously, you can change the git repositories in 'gitea.nip.io' or create new git repositories linking them in the App-of-Apps repository tree.
 
-Good luck with GitOps!
+:partying_face: Good luck with GitOps! :partying_face:
+
+## Clean all
+
+Destroy kind clusters:
+
+```bash
+kind delete clusters --all
+```
+
+## References
+
+Projects
+* [Kind](https://kind.sigs.k8s.io/)
+* [Argocd](https://argo-cd.readthedocs.io/en/stable/)
