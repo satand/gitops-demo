@@ -78,10 +78,27 @@ in another terminal execute
 install.sh
 ```
 
-// TODO Add explanation of infrastructure and App-of-Apps repository tree
+The script above will create:
+* three kind clusters (one cluster hub and two workload clusters) with port mapping configured to expose the ports 80 and 443 of the control-plane node of each cluster on some host ports;
+* a ingress-nginx in every cluster to enable the exposition of cluster services;
+* a git server Gitea in the cluster hub, but visible from the other clusters;
+* some git repositories in the git server:
+    * the App-of-Apps repository;
+    * a couple of helm config repositories relative to sample application and infra services;
+* an ArgoCD instance in the cluster hub, configured with the reference to the internal git server and enabled to use some eternal helm oci repository;
+* an ArgoCD instance in each workload cluster using an ArgoCD Application applied in the cluster hub ArgoCD namespace;
+* the sample applications and infra services (a Strimzi Kafka Operator and a Kafka instance) in the workload clusters/environments as defined in the App-Of-Apps repository tree applying the ArgoCD ApplicationSets included in the same repository.
+
+![Architecture](resources/image.png)
+
+Here an extract of the App-Of-Apps tree
+
+![App-Of-Apps tree](resources/app-of-apps-tree.png)
+
+In every leaf of the App-Of-Apps tree you can define (using a sample yaml file) everything which is needed to reference a git or helm repository and add its specific configurations overriding the default configuration defined in the same repository. There are also other config yaml files to add custom cluster and environment configurations (for example to customize the syncPolicy section of the ArgoCD Application resources).
 
 ## Test the demo applications deployed using the initial state of the App-of-Apps repository
-You should have a couple of demo application:
+You should have a couple of demo applications:
 * in the cluster kind-01 for the dev and test environments
 * in the cluster kind-02 for the cert and prod environments
 
